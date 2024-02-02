@@ -1,6 +1,6 @@
 # zio-bank
 
-Demo Project for [DirectBooks)(https://www.directbooks.com/).
+Demo Project for [DirectBooks](https://www.directbooks.com/).
 
 The `model.scala` class contains the domain entities for the Banking application. The core logic is implemented in the `BankService.scala` file,
 and is modelled as a ZIO Service (using the ZIO Service Pattern 2.0). Banking transactions are stored in an append-only log; the current state for a
