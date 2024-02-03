@@ -80,26 +80,41 @@ case class BankServiceImpl(dataStore: BankDataStore) extends BankService {
     dataStore.getTransactions(accountId)
   }
 
-  override def createTransaction(transactionRequest: TransactionRequest): ZIO[Any, Nothing, Option[Transaction]] = {
+override def createTransaction(transactionRequest: TransactionRequest): ZIO[Any, Nothing, Option[Transaction]] = {
     for {
       accountOpt <- dataStore.getAccount(transactionRequest.accountId)
+      currentBalance <- getCurrentBalance(transactionRequest.accountId) // Get the current balance
       timestamp <- Clock.currentTime(TimeUnit.MILLISECONDS)
-      result <- accountOpt match {
-        case Some(_) =>
-          val transactionId = UUID.randomUUID().toString
-          val newTransactionEvent = TransactionEvent(transactionId, TransactionState.PENDING, timestamp)
-          val newTransaction = Transaction(
-            transactionId,
-            transactionRequest.accountId,
-            transactionRequest.amount,
-            transactionRequest.description,
-            List(newTransactionEvent)
-          )
-          dataStore.createTransaction(newTransaction).as(Some(newTransaction))
+      transaction <- accountOpt match {
+        case Some(_) if transactionRequest.amount < 0 && currentBalance + transactionRequest.amount >= 0 =>
+          // If the transaction amount is negative but there is enough balance, proceed with PENDING transaction
+          appendTransaction(transactionRequest, TransactionState.PENDING, "Transaction Pending", timestamp)
 
-        case None => ZIO.succeed(None)
+        case Some(_) if transactionRequest.amount < 0 && currentBalance + transactionRequest.amount < 0 =>
+          // If the transaction amount is negative and there is not enough balance, proceed with FAILED transaction
+          appendTransaction(transactionRequest, TransactionState.FAILED("Insufficient Balance"), "Insufficient Balance", timestamp)
+
+        case Some(_) =>
+          // If the transaction amount is positive, proceed without balance check
+          appendTransaction(transactionRequest, TransactionState.PENDING, "Transaction Pending", timestamp)
+
+        case None =>
+          // If the account does not exist, do not create a transaction
+          ZIO.succeed(None)
       }
-    } yield result
+    } yield transaction
+  }
+
+  private def appendTransaction(transactionRequest: TransactionRequest, state: TransactionState, message: String, timestamp: Long): ZIO[Any, Nothing, Option[Transaction]] = {
+    val transactionId = UUID.randomUUID().toString
+    val transaction = Transaction(
+      transactionId = transactionId,
+      accountId = transactionRequest.accountId,
+      amount = transactionRequest.amount,
+      description = transactionRequest.description,
+      events = List(TransactionEvent(transactionId, state, timestamp))
+    )
+    dataStore.createTransaction(transaction).as(Some(transaction))
   }
 
   def getCurrentBalance(accountId: String): ZIO[Any, Nothing, BigDecimal] = {
